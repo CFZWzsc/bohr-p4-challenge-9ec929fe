@@ -1,0 +1,9 @@
+{
+  "case_id": "demo-data-quality-01",
+  "output_contract": {
+    "answer": "string",
+    "status": "string",
+    "risks": "array",
+    "sources": "array"
+  }
+}
