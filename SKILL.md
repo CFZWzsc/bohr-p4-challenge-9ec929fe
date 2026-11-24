@@ -21,7 +21,7 @@ description: Use when a scientific data task supplies CSV or SQLite materials an
 - 原始输入：`/input/case.json` 和 Harness 实际提供的 `task.md`；优先检查 `/input/task.md`。从 case 和任务中读取真实的材料路径、数据字典、约束及 `output_contract`，再读取实际 CSV/SQLite 文件。
 - 中间代码、审计、日志、清单：`/app/work`。
 - 最终结果、清洗表、统计、图表、查询结果及可编辑产物：`/app/output`。
-- 安装后的脚本：`/skills/weekly-skill/scripts/audit_data.py` 与 `validate_result.py`。
+- 安装后的脚本：`/skills/weekly-skill/scripts/run_skill.py`（单次总入口：审计 + 写出契约完整的 `result.json` 骨架）、`audit_data.py` 与 `validate_result.py`。
 - 仅依赖 CPython 3.9+ 标准库（`csv`、`json`、`sqlite3` 等）；无需安装包、无需联网。其他科学计算/绘图库只在环境已有且任务需要时使用，记录真实版本，不声称未安装的软件可用。
 
 先建立目录并保存输入清单（真实路径、SHA-256、字节数），保持原始材料只读；清洗数据另存，不覆盖原文件。尽早写一份诚实的部分 `result.json`：保留 `case_id` 和全部契约字段，未完成值用 `null` 或空集合，并明确 `status: "partial"`、限制、不确定性和待办，不能将占位值写成已完成结果。
@@ -119,7 +119,7 @@ python /skills/weekly-skill/scripts/audit_data.py /app/work/synthetic.csv \
 
 调用顺序（固定）：
 
-1. 先运行包内脚本：**本题没有统一的 `run_skill.py` 入口**。按上文“调用”示例执行 `python scripts/audit_data.py <数据文件> --format csv|sqlite --output <审计JSON>`，再用 `python scripts/validate_result.py --case <case.json> --result <result.json> --output <校验报告>` 自检。
+1. 先运行包内脚本：单次总入口 `python scripts/run_skill.py --input <case_dir> --work <work_dir> --out <out_dir|result.json>` 会审计全部 CSV/SQLite 材料并写出保留 `case_id` 与全部契约字段的 `result.json` 骨架；也可按上文“调用”示例分别执行 `audit_data.py`（审计）与 `validate_result.py`（结果自检）。
 2. 再完成脚本无法自动完成的实质工作（译文、论述、图表、修订、结论等），把结果写回 `result.json` 对应字段。
 3. 最后自检：`case_id` 与输入一致；`output_contract` 每个字段都存在；`status` 按契约取 `success`/`partial`/`insufficient_input`/`failed`（缺输入或证据不足时用 `insufficient_input`/`partial`）；无 `pending` 占位；数字、引用、来源可逐条回溯。
 
@@ -142,5 +142,5 @@ python /skills/weekly-skill/scripts/audit_data.py /app/work/synthetic.csv \
 1. **调用 Agent 必须交付成品，不是流程说明**：脚本产出只是索引、核对或规格骨架；调用 Agent 必须在同一 `result.json` 中补齐本题要求的最终产物（正文/译文/审稿意见/综述/分析结论/图表源文件与导出件/幻灯片页内容与讲稿/实验方案等）。交付字段为空、只有标题骨架，或含 `pending`、`TODO` 之类占位，一律视为未完成。
 2. **必须覆盖全部输入条目**：输入中的每个章节、问题、文献、图、页面、指标都要有对应条目，不得只处理示例或首条；确实缺失的条目写入 `uncertainty` / `limitations` 并说明原因，不得静默跳过。
 3. **必须自检后再交付**：`case_id` 与输入一致；`output_contract` 每个字段都存在；状态值取本题契约规定的枚举；数字、单位、引用、来源可逐条回溯；结果内部无自相矛盾。
-4. **入口与参数**：本题入口是 `scripts/audit_data.py`（审计）与 `scripts/validate_result.py`（结果自检），**不存在 `run_skill.py`**；按上文“调用”示例传参，不要套用其他题的命令。
+4. **入口与参数**：单次总入口为 `python scripts/run_skill.py --input <case_dir> --work <work_dir> --out <out_dir|result.json>`；细分入口为 `scripts/audit_data.py`（审计，`--format csv|sqlite --output`）与 `scripts/validate_result.py`（结果自检，`--case --result --output`），参数见上文示例，不要套用其他题的命令。
 5. **平台用 3 个固定案例分别运行**：逻辑要由输入驱动，不针对某一份示例硬编码；字段命名差异走别名匹配与显式降级，并在 `uncertainty` 记录假设。
