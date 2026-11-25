@@ -1,7 +1,7 @@
 {
   "case_id": "demo-data-quality-01",
   "status": "partial",
-  "answer": "data/sample_measurements.csv holds 6 row(s) across 3 column(s). Audit recorded 4 risk item(s) (duplicate_rows x1, missing_values x1, mixed_types x1, mixed_unit_presence x1). These are reported, not repaired: duplicates are not dropped and missing values are not imputed without a task-defined rule. Statistical analysis, plots and conclusions are not computed by this audit and still have to be produced from the data.",
+  "answer": "data/sample_measurements.csv holds 8 row(s) across 4 column(s). Audit recorded 6 risk item(s) (duplicate_rows x1, extreme_value x1, missing_values x1, mixed_types x1, mixed_unit_presence x1, sentinel_suspect x1). These are reported, not repaired: duplicates are not dropped and missing values are not imputed without a task-defined rule. Statistical analysis, plots and conclusions are not computed by this audit and still have to be produced from the data.",
   "risks": [
     {
       "code": "duplicate_rows",
@@ -34,10 +34,11 @@
     {
       "code": "mixed_types",
       "source": "data/sample_measurements.csv",
-      "count": 5,
+      "count": 7,
       "column": "length (mm)",
       "details": {
         "observed_types": [
+          "integer",
           "number",
           "text"
         ],
@@ -73,12 +74,43 @@
     {
       "code": "mixed_unit_presence",
       "source": "data/sample_measurements.csv",
-      "count": 2,
+      "count": 4,
       "column": "length (mm)",
       "details": {
-        "unitless_numeric_count": 2,
+        "unitless_numeric_count": 4,
         "inline_units": [
           "mm"
+        ]
+      }
+    },
+    {
+      "code": "sentinel_suspect",
+      "source": "data/sample_measurements.csv",
+      "count": 1,
+      "column": "length (mm)",
+      "details": {
+        "severity": "high",
+        "values": [
+          -999.0
+        ],
+        "rows": [
+          7
+        ]
+      }
+    },
+    {
+      "code": "extreme_value",
+      "source": "data/sample_measurements.csv",
+      "count": 1,
+      "column": "length (mm)",
+      "details": {
+        "method": "IQR*3 / |z|>5",
+        "severity": "medium",
+        "rows": [
+          8
+        ],
+        "values": [
+          250.0
         ]
       }
     }
@@ -87,10 +119,10 @@
     {
       "path": "data/sample_measurements.csv",
       "format": "csv",
-      "sha256": "c66ebdf00c449c71c3361a34694af18e7cb4ab81d99e8b379ebea78031fc3d5c",
-      "row_count": 6,
-      "column_count": 3,
-      "risk_count": 4
+      "sha256": "34c7cc46d2305cc0baaca2c58504b80e443ba120ebcf44fdb782a2e3c03e0085",
+      "row_count": 8,
+      "column_count": 4,
+      "risk_count": 6
     }
   ],
   "uncertainty": [
