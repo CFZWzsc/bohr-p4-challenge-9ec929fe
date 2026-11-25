@@ -9,7 +9,7 @@ answers, private data or credentials are included.
 ## Skill
 
 - Name: `research-data-quality-gate`
-- Summary: Use when a scientific data task supplies CSV or SQLite materials and requires cleaning, statistics, plots, SQL checks, or a contract-preserving /app/output/result.json; audit missing, duplicate, type and unit risks, and validate case_id plus every original output_contract field before delivery.
+- Summary: Use when a scientific data task supplies CSV or SQLite materials and requires cleaning, statistics, plots, SQL checks, or a contract-preserving /app/output/result.json; audit missing, duplicate, type, unit, sentinel and extreme-value risks, and validate case_id plus every original output_contract field before delivery.
 
 ## Contents
 
@@ -27,7 +27,7 @@ answers, private data or credentials are included.
 ## How to run
 
 ```bash
-python scripts/sk_entry.py --input /input --work /app/work --out /app/output
+python scripts/run_skill.py --case /input/case.json --output /app/output/result.json
 ```
 
 A single deterministic pass reads `/input`, computes the deliverable and writes a
