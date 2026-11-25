@@ -201,6 +201,11 @@ def main(argv=None):
                         encoding="utf-8", newline="\n")
     print(json.dumps({"status": status, "materials": len(sources), "risks": len(risks),
                       "result": out_path.as_posix()}, ensure_ascii=False))
+    try:
+        import report_kit
+        report_kit.augment(str(out_path), getattr(args, "case", None), [])
+    except Exception:
+        pass
     return 0
 
 
