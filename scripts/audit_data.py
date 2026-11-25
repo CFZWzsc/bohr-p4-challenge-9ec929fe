@@ -22,6 +22,10 @@ INLINE_UNIT_RE = re.compile(
     r"\s*([A-Za-zµμ°/%][A-Za-z0-9µμ°/%^*_.-]*)\s*$"
 )
 HEADER_UNIT_RE = re.compile(r"^.*?\s*(?:\(([^()]*)\)|\[([^\[\]]*)\])\s*$")
+DATE_LIKE_RE = re.compile(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}")
+ISO_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+SENTINEL_VALUES = frozenset({-999.0, -9999.0, -99999.0, 9999.0, -1.0})
+RANGE_UNIT_PREFIXES = ("/", "-", "\u2013", "~")
 
 
 class AuditError(Exception):
@@ -34,6 +38,15 @@ def sha256(path):
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def portable_path(path):
+    """Host-independent path: relative to the working directory, else the file name."""
+    path = Path(path)
+    try:
+        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return path.name
 
 
 def write_json(path, payload):
@@ -96,11 +109,140 @@ def header_unit(name):
     return next((group.strip() for group in match.groups() if group is not None), None)
 
 
-def inline_unit(value):
+def is_temporal(value):
+    """True for date/datetime tokens such as 2026/01/03 or a full ISO timestamp."""
     if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return bool(DATE_LIKE_RE.match(text) or ISO_TIMESTAMP_RE.search(text))
+
+
+def inline_unit(value):
+    if not isinstance(value, str) or is_temporal(value):
         return None
     match = INLINE_UNIT_RE.match(value)
-    return match.group(2) if match else None
+    if not match:
+        return None
+    unit = match.group(2)
+    # A leading separator means a date fragment or numeric range, not a unit.
+    return None if unit.startswith(RANGE_UNIT_PREFIXES) else unit
+
+
+def numeric_value(value):
+    """Numeric reading of a value (plain number or number+unit); dates are not numeric."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if is_temporal(text):
+        return None
+    token = text
+    if not NUMBER_RE.fullmatch(token):
+        match = INLINE_UNIT_RE.match(token)
+        if not match or match.group(2).startswith(RANGE_UNIT_PREFIXES):
+            return None
+        token = match.group(1)
+    try:
+        number = float(token)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def quantile(ordered, fraction):
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * fraction
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def extreme_points(points):
+    """Row numbers whose value is an extreme outlier (robust IQR fences or |z|>5)."""
+    values = [value for _, value in points]
+    count = len(values)
+    if count < 2:
+        return []
+    mean = sum(values) / count
+    variance = sum((value - mean) ** 2 for value in values) / count
+    sd = math.sqrt(variance) if variance > 0 else 0.0
+    if count < 4:
+        if sd == 0:
+            return []
+        return [(number, value) for number, value in points
+                if abs((value - mean) / sd) > 5.0]
+    ordered = sorted(values)
+    q1 = quantile(ordered, 0.25)
+    q3 = quantile(ordered, 0.75)
+    iqr = q3 - q1
+    lower = q1 - 3.0 * iqr
+    upper = q3 + 3.0 * iqr
+    flagged = []
+    for number, value in points:
+        outside = value < lower or value > upper
+        z_extreme = sd > 0 and abs((value - mean) / sd) > 5.0
+        if outside or z_extreme:
+            flagged.append((number, value))
+    return flagged
+
+
+def numeric_risks(table, name, position, numeric_points):
+    """Sentinel and extreme-value risks for one numeric-looking column."""
+    risks = []
+    sentinel_rows = [number for number, value in numeric_points if value in SENTINEL_VALUES]
+    if sentinel_rows:
+        sentinel_values = sorted({value for _, value in numeric_points
+                                  if value in SENTINEL_VALUES})
+        risks.append({
+            "code": "sentinel_suspect",
+            "type": "sentinel_suspect",
+            "table": table,
+            "column": name,
+            "column_position": position,
+            "count": len(sentinel_rows),
+            "severity": "high",
+            "values": sentinel_values,
+            "rows": sentinel_rows,
+            "details": {
+                "severity": "high",
+                "values": sentinel_values,
+                "rows": sentinel_rows,
+            },
+        })
+    clean = [(number, value) for number, value in numeric_points
+             if value not in SENTINEL_VALUES]
+    extreme = extreme_points(clean)
+    if extreme:
+        rows = [number for number, _ in extreme]
+        values = [value for _, value in extreme]
+        risks.append({
+            "code": "extreme_value",
+            "type": "extreme_value",
+            "table": table,
+            "column": name,
+            "column_position": position,
+            "count": len(extreme),
+            "severity": "medium",
+            "method": "IQR*3 / |z|>5",
+            "rows": rows,
+            "values": values,
+            "details": {
+                "method": "IQR*3 / |z|>5",
+                "severity": "medium",
+                "rows": rows,
+                "values": values,
+            },
+        })
+    return risks
+
 
 
 def infer_type(types):
@@ -277,6 +419,14 @@ def profile_table(table, names, declared_types, rows, required, csv_header=False
                 "details": {"unitless_numeric_count": unitless_numeric, "inline_units": units},
             })
 
+        numeric_points = []
+        for number, value in populated:
+            parsed = numeric_value(value)
+            if parsed is not None:
+                numeric_points.append((number, parsed))
+        if populated and len(numeric_points) / len(populated) >= 0.8:
+            risks.extend(numeric_risks(table, name, index + 1, numeric_points))
+
     return {
         "table": table,
         "row_count": len(rows),
@@ -354,7 +504,7 @@ def audit(path, data_format, required, selected_table=None):
         "schema_version": "1.0",
         "status": "completed_with_risks" if risks else "completed",
         "source": {
-            "path": str(path.resolve()),
+            "path": portable_path(path),
             "format": data_format,
             "sha256": sha256(path),
         },
@@ -395,7 +545,7 @@ def main(argv=None):
         report = {
             "schema_version": "1.0",
             "status": "failed",
-            "source": {"path": str(Path(args.input)), "format": args.format},
+            "source": {"path": portable_path(args.input), "format": args.format},
             "errors": [{"code": "audit_failed", "message": str(exc)}],
         }
         try:
