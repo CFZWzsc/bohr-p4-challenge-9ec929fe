@@ -21,6 +21,7 @@ answers, private data or credentials are included.
 | `examples/demo-case/data/sample_measurements.csv` |
 | `examples/demo-case/result.json` |
 | `scripts/audit_data.py` |
+| `scripts/report_kit.py` |
 | `scripts/run_skill.py` |
 | `scripts/validate_result.py` |
 | `README.md` |
