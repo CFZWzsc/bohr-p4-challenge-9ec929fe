@@ -1,6 +1,6 @@
 ---
 name: research-data-quality-gate
-description: Use when a scientific data task supplies CSV or SQLite materials and requires cleaning, statistics, plots, SQL checks, or a contract-preserving /app/output/result.json; audit missing, duplicate, type and unit risks, and validate case_id plus every original output_contract field before delivery.
+description: Use when a scientific data task supplies CSV or SQLite materials and requires cleaning, statistics, plots, SQL checks, or a contract-preserving /app/output/result.json; audit missing, duplicate, type, unit, sentinel and extreme-value risks, and validate case_id plus every original output_contract field before delivery.
 ---
 
 # 科研数据质量门与结果契约校验
@@ -11,7 +11,7 @@ description: Use when a scientific data task supplies CSV or SQLite materials an
 
 本 Skill 只提供两道可复用检查：
 
-1. CSV/SQLite 数据字典与缺失、重复、类型、单位风险审计；
+1. CSV/SQLite 数据字典与缺失、重复、类型、单位、哨兵值/极端值风险审计；
 2. 通用 `result.json` 的 `case_id` 一致性和原始 `output_contract` 顶层字段保留校验。
 
 审计**不是**自动清洗，不删除重复、不填补缺失、不转换单位。契约校验也不证明数值、科学结论或字段值正确；这些仍须按任务独立复算。
@@ -44,9 +44,10 @@ python /skills/weekly-skill/scripts/audit_data.py /actual/material.sqlite \
 - SQLite 默认只读审计全部用户表；只需一张表时加 `--table "实际表名"`。表名不存在会失败，不自动猜测替代表。
 - CSV 接受 UTF-8/UTF-8-SIG，首行必须是表头。其他编码或分隔格式需先用实际工具显式转换，并记录转换，不静默猜测。
 - 输出含输入哈希、行数、逐列数据字典、声明/推断类型、缺失比例、非缺失 distinct 数、示例值、单位线索及定位到表/列/数据行的风险。CSV 数据行号从 1 开始且不含表头。
+- 数值列额外报告 `sentinel_suspect`（`-999`、`-9999`、`-99999`、`9999`、`-1`，且不计入缺失）与 `extreme_value`（非哨兵值上 IQR×3 或 |z|>5）；缺失、重复、类型、单位风险照常报告。
 - 缺失标记为大小写不敏感的 `""`、`NA`、`N/A`、`NaN`、`None`、`null`，以及 SQL `NULL`。这是显式启发式规则；若任务语义不同，须在分析规则中说明并另行核对。
 - 重复是“所有返回值完全相同的额外行数”，不代表应当删除。主键重复、近似重复及合法重复测量须按任务另查。
-- 单位只识别表头尾部 `(...)`/`[...]` 和数值字符串的单位后缀。单位冲突只报告，不擅自换算；无单位或无法识别不等于物理上无单位。
+- 单位只识别表头尾部 `(...)`/`[...]` 和数值字符串的单位后缀。日期/时间样式（如 `2026/01/03`、ISO 时间戳）、纯数字与数值区间不识别为单位。单位冲突只报告，不擅自换算；无单位或无法识别不等于物理上无单位。
 
 **退出码必须正确解释：** `0` 表示审计执行完成，可能是 `completed`，也可能是 `completed_with_risks`；`2` 表示读取/执行失败。退出码为 0 不等于数据干净，必须查看 `summary.risk_count` 和 `risks`，将风险处置写入结果与变更记录。
 
