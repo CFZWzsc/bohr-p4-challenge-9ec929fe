@@ -27,22 +27,22 @@ BASE_KEYS = ("case_id", "status", "answer", "risks", "sources")
 
 
 def load_case(target):
-    """Return (case_dict, case_path, case_dir) for a directory or a case.json path."""
+    """Return (case_dict, case_path, case_dir, parse_failed)."""
     path = Path(target)
     if path.is_dir():
         candidate = path / "case.json"
         if candidate.is_file():
             try:
-                return json.loads(candidate.read_text(encoding="utf-8-sig")), candidate, path
+                return json.loads(candidate.read_text(encoding="utf-8-sig")), candidate, path, False
             except (OSError, ValueError):
-                return {}, candidate, path
-        return {}, None, path
+                return {}, candidate, path, True
+        return {}, None, path, False
     if path.is_file():
         try:
-            return json.loads(path.read_text(encoding="utf-8-sig")), path, path.parent
+            return json.loads(path.read_text(encoding="utf-8-sig")), path, path.parent, False
         except (OSError, ValueError):
-            return {}, path, path.parent
-    return {}, None, path
+            return {}, path, path.parent, True
+    return {}, None, path, False
 
 
 def contract_keys(case):
@@ -134,7 +134,7 @@ def main(argv=None):
                         help="output directory or result.json path")
     args = parser.parse_args(argv)
 
-    case, case_path, case_dir = load_case(args.case)
+    case, case_path, case_dir, case_parse_failed = load_case(args.case)
     keys = contract_keys(case)
     case_id = case.get("case_id") if isinstance(case, dict) else None
 
@@ -145,6 +145,26 @@ def main(argv=None):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     work_dir = Path(args.work) if args.work else out_path.parent / "work"
     work_dir.mkdir(parents=True, exist_ok=True)
+
+    if case_parse_failed:
+        result = {"case_id": case_id, "status": "failed",
+                  "answer": "case.json could not be parsed as JSON; no materials were audited.",
+                  "risks": [], "sources": [],
+                  "uncertainty": ["malformed case.json: %s" % (case_path.name if case_path else "unknown")],
+                  "changes": [{"action": "none", "detail": "no file was opened for auditing"}],
+                  "artifacts": []}
+        for key in keys:
+            result.setdefault(key, None)
+        out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+                            encoding="utf-8", newline="\n")
+        print(json.dumps({"status": "failed", "materials": 0, "risks": 0,
+                          "result": out_path.as_posix()}, ensure_ascii=False))
+        try:
+            import report_kit
+            report_kit.augment(str(out_path), getattr(args, "case", None), [])
+        except Exception:
+            pass
+        return 0
 
     reports, sources, failures = [], [], []
     for full, data_format in materials(case_dir, case_path):
